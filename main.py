@@ -48,6 +48,8 @@ class MainClient(discord.Client, Singleton):
         self.twitter_vote_ch_id = twitter_vote_ch_id
         self.citizen_permission_id = citizen_permission_id
 
+        self.emoji_id_dict = {693007620159832124: "AC", 693007620201775174: "WA"}
+
     async def on_ready(self):
         """
         Clientの情報をもとにした初期化
@@ -61,7 +63,7 @@ class MainClient(discord.Client, Singleton):
         if len(self.guilds) > 1:
             pass
             # TODO ここに複数のギルドにbotが属している場合の処理
-        if not self.guild[0].id == 683939861539192860:
+        if not self.guilds[0].id == 683939861539192860:
             pass
             # TODO ここにギルドが限界開発鯖ではない場合の処理
 
@@ -94,7 +96,6 @@ class MainClient(discord.Client, Singleton):
             tmp = MessageManager(message)
             await tmp.send_vote_start_message()
 
-
     async def on_message_edit(self, before, after):
         # TODO:該当のメッセージが編集された場合の処理は必至
         pass
@@ -103,9 +104,22 @@ class MainClient(discord.Client, Singleton):
         # TODO:上に同じ
         pass
 
-    async def on_reaction_add(reaction, user):
-        pass
+    async def on_raw_reaction_add(self, payload):
+        if not payload.emoji.id in self.emoji_id_dict.keys():
+            return
+        await MessageManager.status_changer(message_id=payload.message_id, member_id=payload.member.id, emoji_type=self.emoji_id_dict[payload.emoji.id], status="add")
 
+    async def on_raw_reaction_remove(self, payload):
+        print(payload)
+        if not payload.emoji.id in self.emoji_id_dict.keys():
+            return
+        await MessageManager.status_changer(message_id=payload.message_id, member_id=payload.user_id, emoji_type=self.emoji_id_dict[payload.emoji.id], status="rem")
+
+
+    async def on_raw_reaction_clear(self, payload):
+        if not payload.emoji.id in self.emoji_id_dict.keys():
+            return
+        await MessageManager.status_changer(message_id=payload.message_id, member_id=payload.member.id, emoji_type=self.emoji_id_dict[payload.emoji.id], status="clr")
 
 if __name__ == "__main__":
     TOKEN = os.environ["TOKEN"]
