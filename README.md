@@ -15,6 +15,8 @@
 
 Writer: @Colk-tech
 
+Reviewer: @kawaemon
+
 Reviewer: @isso0424
 
-Reviewer: @kawaemon
+Reviewer: @loxygenk
