@@ -37,21 +37,16 @@ class MainClient(discord.Client, Singleton):
         ----------
         token: str
             discordのBotのトークン
-        twitter_vote_ch: int
+        twitter_vote_ch_id: int
             実際に投票を行うチャンネルのid
         citizen_permission_id: int
             参政権のID
         """
         super(MainClient, self).__init__()
         self.token = token
+
         self.twitter_vote_ch_id = twitter_vote_ch_id
         self.citizen_permission_id = citizen_permission_id
-
-    def launch(self):
-        """
-        clientの起動
-        """
-        self.run(self.token)
 
     async def on_ready(self):
         """
@@ -59,26 +54,31 @@ class MainClient(discord.Client, Singleton):
         """
         if (MainClient.__ready):
             return
+
         MainClient.__ready = True
 
+        # ギルドチェック
         if len(self.guilds) > 1:
-            try:
-                raise Exception
-            except:
-                traceback.print_exc()
+            pass
+            # TODO ここに複数のギルドにbotが属している場合の処理
+        if not self.guild[0].id == 683939861539192860:
+            pass
+            # TODO ここにギルドが限界開発鯖ではない場合の処理
 
         self.guild = self.guilds[0]
 
         self.citizen_permission_obj = self.guild.get_role(self.citizen_permission_id)
-        self.twitter_vote_ch_obj = self.guild.get_channel(self.twitter_vote_ch_id)
+        self.vote_ch_obj = self.guild.get_channel(self.twitter_vote_ch_id)
 
-        self.citizen_members = self.citizen_permission_obj.members
+        self.citizen_list = self.citizen_permission_obj.members
 
-        MessageManager.static_init(self.twitter_vote_ch_obj)
+        MessageManager.static_init(self.vote_ch_obj, self.citizen_list)
 
-
-
-    # 以下イベントを処理するためのアレ
+    def launch(self):
+        """
+        clientの起動
+        """
+        self.run(self.token)
 
     async def on_message(self, message: discord.Message):
         """
@@ -90,9 +90,9 @@ class MainClient(discord.Client, Singleton):
         """
         if message.author.bot:
             return
-        if message.content.lower().startswith("!tw"):
-            m = MessageManager(message)
-            await m.message_sender()
+        if message.content.startswith("!tw"):
+            tmp = MessageManager(message)
+            await tmp.send_vote_start_message()
 
 
     async def on_message_edit(self, before, after):
