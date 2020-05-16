@@ -1,17 +1,5 @@
 """
-　　　　　　　　　　　　　/　iiii　i　ヽ､､
-　　　　　　　　　　　 ／ゞ、i!llllliｉｉ川//ヽ、
-　　　　　　　　　　 /ミ〃　　　　　　〃彡ヽ
-　　　　　　　　　　lミミ　　　　　　　　彡彡｝
-　　　　　　　　　　lミﾐ,ｒ‐-､　,,ｒ─､　彡彡ll|
-　　　　　　　　　　ｉﾐﾐ ｨｪx　　 ,rｪt　　彳彡!
-　　　　　　　　　　　',　　 .:　　　　　 　9｝"
-　　　　　　　　　　 　! 　 ::,､,､　　　　l_丿
-　　　　　　　　　　　 ',　 ＿,＿　　　/、
-　　　　　　　　　　　 rゝ　 =　　　ノi!ヽﾄ、
-　　　　　　　　　　-｛;ヽ` ー─ "　／;/: : ＼
-　　　　　　　　／: : : |;;;＼ 　 　 ／;;;;/: : :/: :＼
-　　　　　　／: : : : : :│;;;;;;＼／;;;;;;;;/: : :/: : : : :＼
+地味に作るのめんどくさかったです、はい
 """
 import asyncio
 import os
@@ -73,8 +61,11 @@ class MainClient(discord.Client, Singleton):
         self.vote_ch_obj = self.guild.get_channel(self.twitter_vote_ch_id)
 
         self.citizen_list = self.citizen_permission_obj.members
+        self.citizen_id_list = list(map((lambda x: x.id), self.citizen_list))
 
-        MessageManager.static_init(self.vote_ch_obj, self.citizen_list)
+        self.emoji_dict = {"AC":self.get_emoji(693007620159832124), "WA":self.get_emoji(693007620201775174)}
+
+        MessageManager.static_init(self.vote_ch_obj, self.citizen_list, self.emoji_dict)
 
     def launch(self):
         """
@@ -94,7 +85,7 @@ class MainClient(discord.Client, Singleton):
             tmp = MessageManager(message)
             await tmp.send_vote_start_message()
             return
-        if message.channel.id == MessageManager.VOTE_CH.id and message.author.id != discord.ClientUser.id:
+        if message.channel.id == MessageManager.VOTE_CH.id and not message.author.id == self.user.id:
             await message.delete(delay=None)
 
     async def on_message_edit(self, before, after):
@@ -106,22 +97,61 @@ class MainClient(discord.Client, Singleton):
         pass
 
     async def on_raw_reaction_add(self, payload):
-        if not payload.emoji.id in self.emoji_id_dict.keys():
+        emoji = payload.emoji
+        polling_station_ids = MessageManager.MESSAGE_INSTANCES.keys()
+
+        # そもそも、リアクションをつけたメッセージが管理対象ではない場合
+        if not payload.message_id in polling_station_ids:
             return
-        await MessageManager.status_changer(message_id=payload.message_id, member_id=payload.member.id, emoji_type=self.emoji_id_dict[payload.emoji.id], status="add")
+
+        target_message = MessageManager.MESSAGE_INSTANCES[payload.message_id].polling_station_message
+
+        # リアクションをつけたユーザーに参政権がない(なおかつ発言者はこのbotでない)場合
+        if not payload.user_id in self.citizen_id_list and not payload.user_id == self.user.id:
+            await target_message.remove_reaction(payload.emoji, self.guild.get_member(payload.member.id))
+            return
+
+        # リアクションをつけたユーザーがbotであるとき
+        if payload.user_id == self.user.id:
+            return
+
+        # つけられたリアクションがAC、WA以外の場合
+        if not emoji.id in self.emoji_id_dict.keys():
+            await target_message.remove_reaction(payload.emoji, self.guild.get_member(payload.member.id))
+            return
+
+        await MessageManager.status_changer(payload.message_id, payload.user_id, self.emoji_id_dict[payload.emoji.id], "add")
+
 
     async def on_raw_reaction_remove(self, payload):
-        print(payload)
-        if not payload.emoji.id in self.emoji_id_dict.keys():
+        emoji = payload.emoji
+        polling_station_ids = MessageManager.MESSAGE_INSTANCES.keys()
+
+        # リアクションを消されたメッセージが管理対象ではない場合
+        if not payload.message_id in polling_station_ids:
             return
-        await MessageManager.status_changer(message_id=payload.message_id, member_id=payload.user_id, emoji_type=self.emoji_id_dict[payload.emoji.id], status="rem")
+
+        # 消されたリアクションがAC、WA以外の場合
+        if not emoji.id in self.emoji_id_dict.keys():
+            return
+
+        await MessageManager.status_changer(payload.message_id, payload.user_id, self.emoji_id_dict[payload.emoji.id], "rem")
+
 
     async def on_raw_reaction_clear(self, payload):
-        if not payload.emoji.id in self.emoji_id_dict.keys():
+        polling_station_ids = MessageManager.MESSAGE_INSTANCES.keys()
+
+        # そもそも、リアクションをクリアされたメッセージが管理対象ではない場合
+        if not payload.message_id in polling_station_ids:
             return
-        await MessageManager.status_changer(message_id=payload.message_id, member_id=payload.member.id, emoji_type=self.emoji_id_dict[payload.emoji.id], status="clr")
+
+        await MessageManager.status_changer(payload.message_id, payload.user_id, self.emoji_id_dict[payload.emoji.id], "clr")
 
 if __name__ == "__main__":
     TOKEN = os.environ["TOKEN"]
-    MAIN = MainClient(TOKEN, citizen_permission_id=710876430073856000, twitter_vote_ch_id=710877538309767211)
+
+    # デバッグ表示
+    print("起動しています...")
+
+    MAIN = MainClient(TOKEN, citizen_permission_id=711190816122470450, twitter_vote_ch_id=710877538309767211)
     MAIN.launch()

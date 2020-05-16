@@ -2,32 +2,33 @@
 実際に投票やメッセージの管理を行う
 メッセージ一つにつきインスタンス一つ
 """
-from lib.util import Singleton
 import datetime
+import re
 
 import discord
 
 VOTE_START_MESSAGE = """\
 ***† Twitter Judgement System †***
+<@&711190816122470450> 各位
 ***{}***さんがツイートの可否の投票を開始しました！
 OK! → <:AC:693007620159832124>
 NG! → <:WA:693007620201775174>
-わからん → <:WJ:693262811958083684>
 
 ***<† 本文 †>***
 ```
-{}
+{} 
 ```
 ***<† 情報 †>***
 ```
-Vote Started By:†{} ({})†, Content By:†{} ({})†  
+Vote Started By:†{} ({})†
+Content By:†{} ({})†  
 ```
-<@&710876430073856000> 各位
 """
 
+ORIGINAL_EMOJI_REGEX = re.compile(r'<.*:\d*>')
 
-class MessageManager(Singleton):
-    def __init__(self, message: discord.message):
+class MessageManager:
+    def __init__(self, vote_starter_message: discord.message):
         """
         投票の開始が必要なメッセージを検知した時につくられるインスタンス
         Parameters
@@ -35,43 +36,89 @@ class MessageManager(Singleton):
         message: discord.message
             該当のメッセージのオブジェクト
         """
-        self.message = message
-        self.author = message.author
+        # 投票を開始した人のデータを保持する
+        self.vote_starter_message = vote_starter_message
+        self.vote_starter_member = vote_starter_message.author
+        self.vote_starter_name = vote_starter_message.author.display_name
+        self.vote_starter_dateime = datetime.datetime.now()
 
-        self.vote_starter_name = message.author.display_name
-        self.vote_starter_id = message.author.id
+        # 参照元のメッセージのデータを保持する
+        # いまのところ!tw <id>コマンドが実装されていないため投票開始者と同じデータが入ってます
+        # tweet_body_textは警告文を送信する関係上、非同期で処理しなきゃいけないので別に処理します
+        self.tweet_body_message = vote_starter_message
+        self.tweet_body_member = vote_starter_message.author
+        self.tweet_body_name = vote_starter_message.author.display_name
+        self.tweet_body_text = None
 
-        # idでツイートする機能が実装されるときのための予備の変数
-        self.tweet_body_author_name = message.author.display_name
-        self.tweet_body_author_id = message.author.id
+        # 実際の投票先のメッセージの情報を保持する
+        # send_vote_start_messageで初期化
+        self.polling_station_message = None
+        self.polling_station_message_id = None
 
-        self.created_time = datetime.datetime.now()
-
-        self.command_msg_id = message.id
-        self.source_meg_id = message.id
-
-        self.vote_msg_id = None
-
-        if "!tw　" in message.content:
-            self.tweet_body = message.content.replace("!tw　", "", 1)
-        if "!tw " in message.content:
-            self.tweet_body = message.content.replace("!tw ", "", 1)
-
-        self.voted_member_id = set()
-        self.vote_result = {"AC":0, "WA":0}
-
-        print(message.id)
+        # 実際の投票関連のデータ
+        # リストには賛成/反対者のIDが入る
+        self.voted_citizen_ids = set()
+        self.vote_result = {"AC": [], "WA": []}
 
     async def send_vote_start_message(self):
-        if not self.message.channel.id == 710877538309767211:
-            await self.message.channel.send("<@&710876430073856000>\n<#710877538309767211>で投票が開始されました！")
-        s = VOTE_START_MESSAGE.format(self.vote_starter_name, self.tweet_body,
-                                      self.vote_starter_name, self.vote_starter_id,
-                                      self.tweet_body_author_name, self.tweet_body_author_id)
-        self.vote_msg_obj = await MessageManager.VOTE_CH.send(s)
-        self.vote_msg_id =self.vote_msg_obj.id
-        MessageManager.MESSAGE_INSTANCES[self.vote_msg_id] = self
-        print(MessageManager.MESSAGE_INSTANCES)  # デバッグ表示
+        self.tweet_body_text = await MessageManager.tweet_body_parser(self.tweet_body_message,
+                                                                      self.vote_starter_message.channel,
+                                                                      self.vote_starter_member.id)
+
+        # twitter-botチャンネル以外で投票が始まったときのための通知
+        if not self.vote_starter_message.channel.id == MessageManager.VOTE_CH.id:
+            await self.vote_starter_message.channel.send("<@&711190816122470450>\n<#710877538309767211>で投票が開始されました！")
+
+        s = VOTE_START_MESSAGE.format(self.vote_starter_name, self.tweet_body_text.replace("`", "'"),
+                                      self.vote_starter_name, self.vote_starter_member.id,
+                                      self.tweet_body_name, self.tweet_body_member.id)
+        self.polling_station_message = await MessageManager.VOTE_CH.send(s)
+
+        # インスタンスを管理対象の辞書に代入
+        self.polling_station_message_id =self.polling_station_message.id
+        MessageManager.MESSAGE_INSTANCES[self.polling_station_message_id] = self
+
+        # 押しやすくするために最初に自分で押しておく
+        await self.polling_station_message.add_reaction(MessageManager.EMOJI_DICT["AC"])
+        await self.polling_station_message.add_reaction(MessageManager.EMOJI_DICT["WA"])
+
+        # デバッグ表示
+        print("投票が作成されました:")
+        print(self.polling_station_message_id)
+        print("現在の投票の一覧:")
+        print(list(MessageManager.MESSAGE_INSTANCES.keys()))
+
+    @staticmethod
+    async def tweet_body_parser(tweet_body_message: discord.message, vote_starter_message_ch: discord.channel, vote_starter_id: int):
+        """
+        Parameters
+        ----------
+        tweet_body_message: discord.message
+            ツイート本文のメッセージのチャンネル
+        vote_starter_message_ch: discord.channel
+            voteが始められたチャンネルのオブジェクト
+        Returns
+        ----------
+        parsed_text: str
+            実際に加工されたあとのテキスト
+        """
+        tmp = tweet_body_message.content
+
+        # コマンドのprefixとその後の空白(全角/半角)を消す
+        if "!tw　" in tmp:
+            tmp = tmp.replace("!tw　", "", 1)
+        if "!tw " in tmp:
+            tmp = tmp.replace("!tw ", "", 1)
+
+        # Discord絵文字が入っている場合に警告して、更に取り除く
+        if len(re.findall(ORIGINAL_EMOJI_REGEX, tmp)) >= 1:
+            s = "<@!{}>\nDiscord emoji が入っています！\n絵文字は無視されます！".format(vote_starter_id)
+            await vote_starter_message_ch.send(s)
+            tmp = re.sub(ORIGINAL_EMOJI_REGEX, "", tmp)
+
+        parsed_text = tmp
+
+        return parsed_text
 
     @staticmethod
     async def status_changer(message_id: int, member_id: int, emoji_type: str, status: str):
@@ -89,58 +136,30 @@ class MessageManager(Singleton):
             Reactionがadd,rem,clrのいずれかが格納される
 
         """
-        if not member_id in MessageManager.CITIZEN_ID_LIST:
-            return
-        #try:
-        #    manager_instance = MessageManager.MESSAGE_INSTANCES[message_id]
-        #except ValueError:
-        #    print("No message match")
-        #except Exception as e:
-        #    await MessageManager.VOTE_CH.send("不明な例外が発生しました\n内容は{}です".format(e))
+        print("ステータスチェンジを感知したわよ！")
+        print(message_id, member_id, emoji_type, status)
 
-        manager_instance = MessageManager.MESSAGE_INSTANCES[message_id]
-
-        if status == "add":
-            if emoji_type == "AC":
-                manager_instance.voted_member_id.add(member_id)
-                manager_instance.vote_result[emoji_type] += 1
-                await MessageManager.VOTE_CH.send(manager_instance.voted_member_id)
-                await MessageManager.VOTE_CH.send(manager_instance.vote_result)
-                return
-            manager_instance.voted_member_id.add(member_id)
-            manager_instance.vote_result[emoji_type] += 1
-            await MessageManager.VOTE_CH.send(manager_instance.voted_member_id)
-            await MessageManager.VOTE_CH.send(manager_instance.vote_result)
-        if status == "rem":
-            if emoji_type == "AC":
-                manager_instance.voted_member_id.add(member_id)
-                manager_instance.vote_result[emoji_type] -= 1
-                await MessageManager.VOTE_CH.send(manager_instance.voted_member_id)
-                await MessageManager.VOTE_CH.send(manager_instance.vote_result)
-                return
-            manager_instance.voted_member_id.add(member_id)
-            manager_instance.vote_result[emoji_type] -= 1
-            await MessageManager.VOTE_CH.send(manager_instance.voted_member_id)
-            await MessageManager.VOTE_CH.send(manager_instance.vote_result)
-        if status == "clr":
-            manager_instance.voted_member_id = set()
-            manager_instance.vote_result = {"AC":0, "WA":0}
-            await MessageManager.VOTE_CH.send(manager_instance.voted_member_id)
-            await MessageManager.VOTE_CH.send(manager_instance.vote_result)
-            return
 
     @staticmethod
-    def static_init(twitter_vote_ch_obj: discord.TextChannel, citizen_list):
+    def static_init(twitter_vote_ch_obj: discord.TextChannel, citizen_list, emoji_dict: dict):
         """
         s   t   a   t   i   c   オ   ヂ   サ   ン
         Parameters
         ----------
         twitter_vote_ch_obj: discord.TextChannel
             投票チャンネルのオブジェクト
-        CITIZEN_ID_LIST: list[discord.member]
+        citizen_list: list[discord.member]オブジェクト
+            参政権を持ったユーザーのリストが格納されている
+        emoji_dict: dict{str:discord.emoji}
+            ACとWAのemoji
         """
         MessageManager.MESSAGE_INSTANCES = {}
         MessageManager.VOTE_CH = twitter_vote_ch_obj
         MessageManager.CITIZEN_LIST = citizen_list
         MessageManager.CITIZEN_ID_LIST = list(map((lambda x: x.id), citizen_list))
+        MessageManager.EMOJI_DICT = emoji_dict
+
+        # デバッグ表示
+        print("市民権IDリストを取得しました:")
         print(MessageManager.CITIZEN_ID_LIST)
+        print("MessageManagerの初期化が完了しました")
