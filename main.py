@@ -90,15 +90,16 @@ class MainClient(discord.Client, Singleton):
         message: discord.Message
             受け取ったメッセージのデータ
         """
-        if message.author.bot:
-            return
-        if message.content.startswith("!tw"):
+        if message.content.startswith("!tw") and not message.author.bot:
             tmp = MessageManager(message)
             await tmp.send_vote_start_message()
+            return
+        if message.channel.id == MessageManager.VOTE_CH.id and message.author.id != discord.ClientUser.id:
+            await message.delete(delay=None)
 
     async def on_message_edit(self, before, after):
-        # TODO:該当のメッセージが編集された場合の処理は必至
         pass
+        # TODO:該当のメッセージが編集された場合の処理は必至
 
     async def on_message_delete(self, message: discord.Message):
         # TODO:上に同じ
@@ -114,7 +115,6 @@ class MainClient(discord.Client, Singleton):
         if not payload.emoji.id in self.emoji_id_dict.keys():
             return
         await MessageManager.status_changer(message_id=payload.message_id, member_id=payload.user_id, emoji_type=self.emoji_id_dict[payload.emoji.id], status="rem")
-
 
     async def on_raw_reaction_clear(self, payload):
         if not payload.emoji.id in self.emoji_id_dict.keys():
