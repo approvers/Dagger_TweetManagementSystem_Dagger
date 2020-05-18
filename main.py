@@ -53,7 +53,7 @@ class MainClient(discord.Client, Singleton):
 
         # ギルドチェック
         # not(指定されたIDのGuildのみにBotがいる)場合、エラーを起こす
-        if self.guilds != [self.guild_get(self.guild_id)]:
+        if self.guilds != [self.get_guild(self.guild_id)]:
             # TODO ここに複数のギルドにbotが属している場合の処理
             pass
 
@@ -65,7 +65,7 @@ class MainClient(discord.Client, Singleton):
         self.citizen_list = self.citizen_permission_obj.members
         self.citizen_id_list = list(map((lambda x: x.id), self.citizen_list))
 
-        self.emoji_dict = {"AC":self.get_emoji(693007620159832124), "WA":self.get_emoji(693007620201775174)}
+        self.emoji_dict = {"AC": self.get_emoji(693007620159832124), "WA": self.get_emoji(693007620201775174)}
 
         MessageManager.static_init(self.vote_ch_obj, self.citizen_list, self.emoji_dict)
 
@@ -131,7 +131,8 @@ class MainClient(discord.Client, Singleton):
             await target_message.remove_reaction(payload.emoji, self.guild.get_member(payload.member.id))
             return
 
-        await MessageManager.status_changer(payload.message_id, payload.user_id, self.emoji_id_dict[payload.emoji.id], "add")
+        member = self.guild.get_member(payload.user_id)
+        await MessageManager.status_changer(payload.message_id, member, self.emoji_id_dict[payload.emoji.id], "add")
 
 
     async def on_raw_reaction_remove(self, payload):
@@ -148,7 +149,8 @@ class MainClient(discord.Client, Singleton):
         if not emoji.id in self.emoji_id_dict.keys():
             return
 
-        await MessageManager.status_changer(payload.message_id, payload.user_id, self.emoji_id_dict[payload.emoji.id], "rem")
+        member = self.guild.get_member(payload.user_id)
+        await MessageManager.status_changer(payload.message_id, member, self.emoji_id_dict[payload.emoji.id], "rem")
 
 
     async def on_raw_reaction_clear(self, payload):
@@ -159,7 +161,7 @@ class MainClient(discord.Client, Singleton):
         if not payload.message_id in polling_station_ids:
             return
 
-        await MessageManager.status_changer(payload.message_id, payload.user_id, self.emoji_id_dict[payload.emoji.id], "clr")
+        await MessageManager.status_changer(payload.message_id, None, None, "clr")
 
 
 if __name__ == "__main__":

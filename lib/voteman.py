@@ -57,8 +57,7 @@ class MessageManager:
 
         # 実際の投票関連のデータ
         # リストには賛成/反対者のIDが入る
-        self.voted_citizen_ids = set()
-        self.vote_result = {"AC": [], "WA": []}
+        self.vote_result = {"AC": set(), "WA": set()}
 
     async def send_vote_start_message(self):
         self.tweet_body_text = await MessageManager.tweet_body_parser(self.tweet_body_message,
@@ -121,24 +120,42 @@ class MessageManager:
         return parsed_text
 
     @staticmethod
-    async def status_changer(message_id: int, member_id: int, emoji_type: str, status: str):
+    async def status_changer(message_id: int, member: discord.member, emoji_type: str, status: str):
         """
         ステータスを変更するための関数
         Parameters
         ----------
         message_id: int
             ステータスが変更されたメッセージのID
-        member_id: int
-            リアクションの変更を行ったユーザーのID
+        member: discord.member
+            リアクションを行ったメンバーのオブジェクト
         emoji_type: str
             その絵文字がACなのかWAなのかが格納されている
         status: str
             Reactionがadd,rem,clrのいずれかが格納される
 
         """
-        print("ステータスチェンジを感知したわよ！")
-        print(message_id, member_id, emoji_type, status)
 
+        instance = MessageManager.MESSAGE_INSTANCES[message_id]
+
+        if status == "add":
+            member_id = member.id
+            # つけられた絵文字のほうじゃない絵文字が格納される
+            complement_emoji = "AC" if emoji_type == "WA" else "WA"
+            if member_id in instance.vote_result[complement_emoji]:
+                await instance.polling_station_message.remove_reaction(MessageManager.EMOJI_DICT[complement_emoji], member)
+            instance.vote_result[emoji_type].add(member_id)
+
+        if status == "rem":
+            member_id = member.id
+            instance.vote_result[emoji_type].remove(member_id)
+
+        if status == "clr":
+            await MessageManager.VOTE_CH.send("クリアすんなカス！！！！㊙すぞ！！！")
+            instance.vote_result = {"AC": set(), "WA": set()}
+
+        await MessageManager.VOTE_CH.send("現在の投票状況です：")
+        await MessageManager.VOTE_CH.send(instance.vote_result)
 
     @staticmethod
     def static_init(twitter_vote_ch_obj: discord.TextChannel, citizen_list, emoji_dict: dict):
@@ -162,4 +179,9 @@ class MessageManager:
         # デバッグ表示
         print("市民権IDリストを取得しました:")
         print(MessageManager.CITIZEN_ID_LIST)
+
+        MessageManager.AC_EMOJI = emoji_dict["AC"]
+        MessageManager.WA_EMOJI = emoji_dict["WA"]
+
+        # デバッグ表示
         print("MessageManagerの初期化が完了しました")
