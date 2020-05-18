@@ -154,8 +154,8 @@ class MessageManager:
             await MessageManager.VOTE_CH.send("クリアすんなカス！！！！㊙すぞ！！！")
             instance.vote_result = {"AC": set(), "WA": set()}
 
-        await MessageManager.VOTE_CH.send("現在の投票状況です：")
-        await MessageManager.VOTE_CH.send(instance.vote_result)
+        print("現在の投票状況：")
+        print(instance.vote_result)
 
     @staticmethod
     def static_init(twitter_vote_ch_obj: discord.TextChannel, citizen_list, emoji_dict: dict):
