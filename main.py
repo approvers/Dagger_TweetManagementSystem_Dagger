@@ -18,7 +18,7 @@ class MainClient(discord.Client, Singleton):
 
     __ready = False
 
-    def __init__(self, token: str, citizen_permission_id: int, twitter_vote_ch_id: int):
+    def __init__(self, token: str, citizen_permission_id: int, twitter_vote_ch_id: int, guild_id: int):
         """
         クライアントを起動する前の処理
         Parameters
@@ -29,12 +29,16 @@ class MainClient(discord.Client, Singleton):
             実際に投票を行うチャンネルのid
         citizen_permission_id: int
             参政権のID
+        guild_id: int
+            このBotを起動するギルドのID
+            このID以外のギルドにBotがいる場合、エラーになる
         """
         super(MainClient, self).__init__()
         self.token = token
 
         self.twitter_vote_ch_id = twitter_vote_ch_id
         self.citizen_permission_id = citizen_permission_id
+        self.guild_id = guild_id
 
         self.emoji_id_dict = {693007620159832124: "AC", 693007620201775174: "WA"}
 
@@ -48,12 +52,10 @@ class MainClient(discord.Client, Singleton):
         MainClient.__ready = True
 
         # ギルドチェック
-        if len(self.guilds) > 1:
-            pass
+        # not(指定されたIDのGuildのみにBotがいる)場合、エラーを起こす
+        if self.guilds != [self.guild_get(self.guild_id)]:
             # TODO ここに複数のギルドにbotが属している場合の処理
-        if not self.guilds[0].id == 683939861539192860:
             pass
-            # TODO ここにギルドが限界開発鯖ではない場合の処理
 
         self.guild = self.guilds[0]
 
@@ -82,15 +84,18 @@ class MainClient(discord.Client, Singleton):
             受け取ったメッセージのデータ
         """
         if message.content.startswith("!tw") and not message.author.bot:
+            # !tw はじまりのメッセージである場合、MessageManagerインスタンスをつくる
             tmp = MessageManager(message)
             await tmp.send_vote_start_message()
             return
+
         if message.channel.id == MessageManager.VOTE_CH.id and not message.author.id == self.user.id:
+            # このBot以外がVOTE_CHで発言した場合、その発言を削除する
             await message.delete(delay=None)
 
     async def on_message_edit(self, before, after):
+        # TODO:管理対象のメッセージが編集されたときの対応
         pass
-        # TODO:該当のメッセージが編集された場合の処理は必至
 
     async def on_message_delete(self, message: discord.Message):
         # TODO:上に同じ
@@ -98,24 +103,30 @@ class MainClient(discord.Client, Singleton):
 
     async def on_raw_reaction_add(self, payload):
         emoji = payload.emoji
+        # 投票を行っているメセージのIDのリストを取得する
         polling_station_ids = MessageManager.MESSAGE_INSTANCES.keys()
 
         # そもそも、リアクションをつけたメッセージが管理対象ではない場合
+        # 無視
         if not payload.message_id in polling_station_ids:
             return
 
+        # 管理対象のメッセージのオブジェクトを取得する
         target_message = MessageManager.MESSAGE_INSTANCES[payload.message_id].polling_station_message
 
-        # リアクションをつけたユーザーに参政権がない(なおかつ発言者はこのbotでない)場合
-        if not payload.user_id in self.citizen_id_list and not payload.user_id == self.user.id:
-            await target_message.remove_reaction(payload.emoji, self.guild.get_member(payload.member.id))
-            return
-
-        # リアクションをつけたユーザーがbotであるとき
+        # リアクションをつけたユーザーが自分であるとき
+        # 無視する
         if payload.user_id == self.user.id:
             return
 
+        # リアクションをつけたユーザーに参政権がない場合
+        # つけられたリアクションを削除する
+        if not payload.user_id in self.citizen_id_list:
+            await target_message.remove_reaction(payload.emoji, self.guild.get_member(payload.member.id))
+            return
+
         # つけられたリアクションがAC、WA以外の場合
+        # つけられたリアクションを削除する
         if not emoji.id in self.emoji_id_dict.keys():
             await target_message.remove_reaction(payload.emoji, self.guild.get_member(payload.member.id))
             return
@@ -128,10 +139,12 @@ class MainClient(discord.Client, Singleton):
         polling_station_ids = MessageManager.MESSAGE_INSTANCES.keys()
 
         # リアクションを消されたメッセージが管理対象ではない場合
+        # 無視する
         if not payload.message_id in polling_station_ids:
             return
 
         # 消されたリアクションがAC、WA以外の場合
+        # 無視する
         if not emoji.id in self.emoji_id_dict.keys():
             return
 
@@ -142,10 +155,12 @@ class MainClient(discord.Client, Singleton):
         polling_station_ids = MessageManager.MESSAGE_INSTANCES.keys()
 
         # そもそも、リアクションをクリアされたメッセージが管理対象ではない場合
+        # 無視する
         if not payload.message_id in polling_station_ids:
             return
 
         await MessageManager.status_changer(payload.message_id, payload.user_id, self.emoji_id_dict[payload.emoji.id], "clr")
+
 
 if __name__ == "__main__":
     TOKEN = os.environ["TOKEN"]
@@ -153,5 +168,7 @@ if __name__ == "__main__":
     # デバッグ表示
     print("起動しています...")
 
-    MAIN = MainClient(TOKEN, citizen_permission_id=711190816122470450, twitter_vote_ch_id=710877538309767211)
+    MAIN = MainClient(TOKEN,
+                      citizen_permission_id=711190816122470450, twitter_vote_ch_id=710877538309767211,
+                      guild_id=683939861539192860)
     MAIN.launch()

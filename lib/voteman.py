@@ -73,12 +73,12 @@ class MessageManager:
                                       self.vote_starter_name, self.vote_starter_member.id,
                                       self.tweet_body_name, self.tweet_body_member.id)
         self.polling_station_message = await MessageManager.VOTE_CH.send(s)
+        self.polling_station_message_id = self.polling_station_message.id
 
         # インスタンスを管理対象の辞書に代入
-        self.polling_station_message_id =self.polling_station_message.id
         MessageManager.MESSAGE_INSTANCES[self.polling_station_message_id] = self
 
-        # 押しやすくするために最初に自分で押しておく
+        # 押しやすくするために最初に自分でリアクションを押しておく
         await self.polling_station_message.add_reaction(MessageManager.EMOJI_DICT["AC"])
         await self.polling_station_message.add_reaction(MessageManager.EMOJI_DICT["WA"])
 
@@ -89,13 +89,13 @@ class MessageManager:
         print(list(MessageManager.MESSAGE_INSTANCES.keys()))
 
     @staticmethod
-    async def tweet_body_parser(tweet_body_message: discord.message, vote_starter_message_ch: discord.channel, vote_starter_id: int):
+    async def tweet_body_parser(tweet_body_message: discord.message, respond_ch: discord.channel, vote_starter_id: int):
         """
         Parameters
         ----------
         tweet_body_message: discord.message
             ツイート本文のメッセージのチャンネル
-        vote_starter_message_ch: discord.channel
+        respond_ch: discord.channel
             voteが始められたチャンネルのオブジェクト
         Returns
         ----------
@@ -113,7 +113,7 @@ class MessageManager:
         # Discord絵文字が入っている場合に警告して、更に取り除く
         if len(re.findall(ORIGINAL_EMOJI_REGEX, tmp)) >= 1:
             s = "<@!{}>\nDiscord emoji が入っています！\n絵文字は無視されます！".format(vote_starter_id)
-            await vote_starter_message_ch.send(s)
+            await respond_ch.send(s)
             tmp = re.sub(ORIGINAL_EMOJI_REGEX, "", tmp)
 
         parsed_text = tmp
