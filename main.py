@@ -53,6 +53,16 @@ class MainClient(discord.Client, Singleton):
 
         self.emoji_id_dict = {693007620159832124: "AC", 693007620201775174: "WA"}
 
+        self.guild = None
+
+        self.citizen_permission_obj = None
+        self.vote_ch_obj = None
+
+        self.citizen_list = None
+        self.citizen_id_list = None
+
+        self.emoji_dict = None
+
     async def on_ready(self):
         """
         Clientの情報をもとにした初期化
@@ -97,10 +107,10 @@ class MainClient(discord.Client, Singleton):
         if message.content.startswith("!tw") and not message.author.bot:
             # !tw はじまりのメッセージである場合、MessageManagerインスタンスをつくる
             tmp = MessageManager(message)
-            await tmp.send_vote_start_message()
+            await tmp.announce_voting()
             return
 
-        if message.channel.id == MessageManager.VOTE_CH.id and not message.author.id == self.user.id:
+        if message.channel == MessageManager.VOTE_CH and not message.author.id == self.user.id:
             # このBot以外がVOTE_CHで発言した場合、その発言を削除する
             await message.delete(delay=None)
 
@@ -115,15 +125,15 @@ class MainClient(discord.Client, Singleton):
     async def on_raw_reaction_add(self, payload):
         emoji = payload.emoji
         # 投票を行っているメセージのIDのリストを取得する
-        polling_station_ids = MessageManager.MESSAGE_INSTANCES.keys()
+        vote_target_msg_ids = MessageManager.MESSAGE_INSTANCES.keys()
 
         # そもそも、リアクションをつけたメッセージが管理対象ではない場合
         # 無視
-        if not payload.message_id in polling_station_ids:
+        if not payload.message_id in vote_target_msg_ids:
             return
 
         # 管理対象のメッセージのオブジェクトを取得する
-        target_message = MessageManager.MESSAGE_INSTANCES[payload.message_id].polling_station_message
+        target_message = MessageManager.MESSAGE_INSTANCES[payload.message_id].bill_msg
 
         # リアクションをつけたユーザーが自分であるとき
         # 無視する
@@ -148,11 +158,11 @@ class MainClient(discord.Client, Singleton):
 
     async def on_raw_reaction_remove(self, payload):
         emoji = payload.emoji
-        polling_station_ids = MessageManager.MESSAGE_INSTANCES.keys()
+        vote_target_msg_ids = MessageManager.MESSAGE_INSTANCES.keys()
 
         # リアクションを消されたメッセージが管理対象ではない場合
         # 無視する
-        if not payload.message_id in polling_station_ids:
+        if not payload.message_id in vote_target_msg_ids:
             return
 
         # 消されたリアクションがAC、WA以外の場合
@@ -164,11 +174,11 @@ class MainClient(discord.Client, Singleton):
         await MessageManager.status_changer_wrapper("rem", payload.message_id, member, self.emoji_id_dict[payload.emoji.id])
 
     async def on_raw_reaction_clear(self, payload):
-        polling_station_ids = MessageManager.MESSAGE_INSTANCES.keys()
+        vote_target_msg_ids = MessageManager.MESSAGE_INSTANCES.keys()
 
         # そもそも、リアクションをクリアされたメッセージが管理対象ではない場合
         # 無視する
-        if not payload.message_id in polling_station_ids:
+        if not payload.message_id in vote_target_msg_ids:
             return
 
         await MessageManager.status_changer_wrapper("clr", payload.message_id)

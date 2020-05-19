@@ -29,67 +29,60 @@ ORIGINAL_EMOJI_REGEX = re.compile(r'<.*:\d*>')
 
 
 class MessageManager:
-    def __init__(self, vote_starter_message: discord.message):
+    def __init__(self, vote_starter_message: discord.message, tweet_body_message: discord.message = None):
         """
         投票の開始が必要なメッセージを検知した時につくられるインスタンス
         Parameters
         ----------
-        message: discord.message
+        vote_starter_message: discord.message
             該当のメッセージのオブジェクト
         """
         # 投票を開始した人のデータを保持する
-        self.vote_starter_message = vote_starter_message
-        self.vote_starter_member = vote_starter_message.author
-        self.vote_starter_name = vote_starter_message.author.display_name
-        self.vote_starter_dateime = datetime.datetime.now()
+        # billは英語で法案という意味です
+        self.bill_msg: discord.message = vote_starter_message
 
         # 参照元のメッセージのデータを保持する
         # いまのところ!tw <id>コマンドが実装されていないため投票開始者と同じデータが入ってます
-        # tweet_body_textは警告文を送信する関係上、非同期で処理しなきゃいけないので別に処理します
-        self.tweet_body_message = vote_starter_message
-        self.tweet_body_member = vote_starter_message.author
-        self.tweet_body_name = vote_starter_message.author.display_name
-        self.tweet_body_text = None
+        # tweet_body_textは、非同期で処理しなきゃいけないので別に処理します
+        self.tweet_body_msg: discord.message = vote_starter_message if tweet_body_message is None else tweet_body_message
+        self.tweet_body_text: str = None
 
         # 実際の投票先のメッセージの情報を保持する
         # send_vote_start_messageで初期化
-        self.polling_station_message = None
-        self.polling_station_message_id = None
+        self.vote_target_msg: discord.message = None
 
-        # 実際の投票関連のデータ
         # リストには賛成/反対者のIDが入る
-        self.vote_result = {"AC": set(), "WA": set()}
+        self.vote_result: dict[str:set[int]] = {"AC": set(), "WA": set()}
 
-    async def send_vote_start_message(self):
-        self.tweet_body_text = await MessageManager.tweet_body_parser(self.tweet_body_message,
-                                                                      self.vote_starter_message.channel,
-                                                                      self.vote_starter_member.id)
-
+    async def announce_voting(self):
         # twitter-botチャンネル以外で投票が始まったときのための通知
-        if not self.vote_starter_message.channel.id == MessageManager.VOTE_CH.id:
-            await self.vote_starter_message.channel.send("<@&711190816122470450>\n<#710877538309767211>で投票が開始されました！")
+        if self.bill_msg.channel != MessageManager.VOTE_CH:
+            await self.bill_msg.channel.send("<@&711190816122470450>\n<#710877538309767211>で投票が開始されます！")
 
-        s = VOTE_START_MESSAGE.format(self.vote_starter_name, self.tweet_body_text.replace("`", "'"),
-                                      self.vote_starter_name, self.vote_starter_member.id,
-                                      self.tweet_body_name, self.tweet_body_member.id)
-        self.polling_station_message = await MessageManager.VOTE_CH.send(s)
-        self.polling_station_message_id = self.polling_station_message.id
+        self.tweet_body_text = await MessageManager.tweet_body_parser(self.tweet_body_msg,
+                                                                      self.bill_msg.channel,
+                                                                      self.bill_msg.author.id)
+
+        s = VOTE_START_MESSAGE.format(self.bill_msg.author.display_name, self.tweet_body_text.replace("`", "'"),
+                                      self.bill_msg.author.display_name, self.bill_msg.author.id,
+                                      self.tweet_body_msg.author.display_name, self.tweet_body_msg.author.id)
+        self.vote_target_msg = await MessageManager.VOTE_CH.send(s)
 
         # インスタンスを管理対象の辞書に代入
-        MessageManager.MESSAGE_INSTANCES[self.polling_station_message_id] = self
+        MessageManager.MESSAGE_INSTANCES[self.vote_target_msg.id] = self
 
         # 押しやすくするために最初に自分でリアクションを押しておく
-        await self.polling_station_message.add_reaction(MessageManager.EMOJI_DICT["AC"])
-        await self.polling_station_message.add_reaction(MessageManager.EMOJI_DICT["WA"])
+        await self.vote_target_msg.add_reaction(MessageManager.EMOJI_DICT["AC"])
+        await self.vote_target_msg.add_reaction(MessageManager.EMOJI_DICT["WA"])
 
         # デバッグ表示
         print("投票が作成されました:")
-        print(self.polling_station_message_id)
+        print(self.vote_target_msg.id)
         print("現在の投票の一覧:")
         print(list(MessageManager.MESSAGE_INSTANCES.keys()))
 
     @staticmethod
-    async def tweet_body_parser(tweet_body_message: discord.message, respond_ch: discord.channel, vote_starter_id: int):
+    async def tweet_body_parser(tweet_body_message: discord.message, respond_ch: discord.channel, bill_author_id: int):
         """
         Parameters
         ----------
@@ -97,6 +90,8 @@ class MessageManager:
             ツイート本文のメッセージのチャンネル
         respond_ch: discord.channel
             voteが始められたチャンネルのオブジェクト
+        bill_author_id: int
+            法案の提出者のID
         Returns
         ----------
         parsed_text: str
@@ -112,7 +107,7 @@ class MessageManager:
 
         # Discord絵文字が入っている場合に警告して、更に取り除く
         if len(re.findall(ORIGINAL_EMOJI_REGEX, tmp)) >= 1:
-            s = "<@!{}>\nDiscord emoji が入っています！\n絵文字は無視されます！".format(vote_starter_id)
+            s = "<@!{}>\nDiscord emoji が入っています！\n絵文字は無視されます！".format(bill_author_id)
             await respond_ch.send(s)
             tmp = re.sub(ORIGINAL_EMOJI_REGEX, "", tmp)
 
@@ -120,12 +115,12 @@ class MessageManager:
 
         return parsed_text
 
-    async def status_changer(self, member: discord.member, emoji_type: str, status: str):
+    async def status_changer(self, reaction_member: discord.member, emoji_type: str, status: str):
         """
         ステータスを変更するための関数
         Parameters
         ----------
-        member: discord.member
+        reaction_member: discord.member
             リアクションを行ったメンバーのオブジェクト
         emoji_type: str
             その絵文字がACなのかWAなのかが格納されている
@@ -133,15 +128,15 @@ class MessageManager:
             Reactionがadd,rem,clrのいずれかが格納される
         """
         if status == "add":
-            member_id = member.id
+            member_id = reaction_member.id
             # つけられた絵文字のほうじゃない絵文字が格納される
             complement_emoji = "AC" if emoji_type == "WA" else "WA"
             if member_id in self.vote_result[complement_emoji]:
-                await self.polling_station_message.remove_reaction(MessageManager.EMOJI_DICT[complement_emoji], member)
+                await self.vote_target_msg.remove_reaction(MessageManager.EMOJI_DICT[complement_emoji], reaction_member)
             self.vote_result[emoji_type].add(member_id)
 
         if status == "rem":
-            member_id = member.id
+            member_id = reaction_member.id
             self.vote_result[emoji_type].remove(member_id)
 
         if status == "clr":
@@ -167,8 +162,8 @@ class MessageManager:
             Reactionがadd,rem,clrのいずれかが格納される
 
         """
-        instance_obj = MessageManager.MESSAGE_INSTANCES[message_id]
-        await instance_obj.status_changer(member, emoji_type, status)
+        o = MessageManager.MESSAGE_INSTANCES[message_id]
+        await o.status_changer(member, emoji_type, status)
 
     @staticmethod
     def static_init(twitter_vote_ch_obj: discord.TextChannel, citizen_list, emoji_dict: dict):
