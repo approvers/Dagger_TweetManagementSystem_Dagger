@@ -15,7 +15,6 @@
 """
 import asyncio
 import os
-import traceback
 
 import discord
 
@@ -144,7 +143,7 @@ class MainClient(discord.Client, Singleton):
             return
 
         member = self.guild.get_member(payload.user_id)
-        await MessageManager.status_changer(payload.message_id, member, self.emoji_id_dict[payload.emoji.id], "add")
+        await MessageManager.status_changer_wrapper("add", payload.message_id, member, self.emoji_id_dict[payload.emoji.id])
 
 
     async def on_raw_reaction_remove(self, payload):
@@ -162,8 +161,7 @@ class MainClient(discord.Client, Singleton):
             return
 
         member = self.guild.get_member(payload.user_id)
-        await MessageManager.status_changer(payload.message_id, member, self.emoji_id_dict[payload.emoji.id], "rem")
-
+        await MessageManager.status_changer_wrapper("rem", payload.message_id, member, self.emoji_id_dict[payload.emoji.id])
 
     async def on_raw_reaction_clear(self, payload):
         polling_station_ids = MessageManager.MESSAGE_INSTANCES.keys()
@@ -173,7 +171,7 @@ class MainClient(discord.Client, Singleton):
         if not payload.message_id in polling_station_ids:
             return
 
-        await MessageManager.status_changer(payload.message_id, None, None, "clr")
+        await MessageManager.status_changer_wrapper("clr", payload.message_id)
 
 
 if __name__ == "__main__":

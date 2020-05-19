@@ -27,6 +27,7 @@ Content By:†{} ({})†
 
 ORIGINAL_EMOJI_REGEX = re.compile(r'<.*:\d*>')
 
+
 class MessageManager:
     def __init__(self, vote_starter_message: discord.message):
         """
@@ -119,8 +120,39 @@ class MessageManager:
 
         return parsed_text
 
+    async def status_changer(self, member: discord.member, emoji_type: str, status: str):
+        """
+        ステータスを変更するための関数
+        Parameters
+        ----------
+        member: discord.member
+            リアクションを行ったメンバーのオブジェクト
+        emoji_type: str
+            その絵文字がACなのかWAなのかが格納されている
+        status: str
+            Reactionがadd,rem,clrのいずれかが格納される
+        """
+        if status == "add":
+            member_id = member.id
+            # つけられた絵文字のほうじゃない絵文字が格納される
+            complement_emoji = "AC" if emoji_type == "WA" else "WA"
+            if member_id in self.vote_result[complement_emoji]:
+                await self.polling_station_message.remove_reaction(MessageManager.EMOJI_DICT[complement_emoji], member)
+            self.vote_result[emoji_type].add(member_id)
+
+        if status == "rem":
+            member_id = member.id
+            self.vote_result[emoji_type].remove(member_id)
+
+        if status == "clr":
+            await MessageManager.VOTE_CH.send("クリアすんなカス！！！！㊙すぞ！！！")
+            self.vote_result = {"AC": set(), "WA": set()}
+
+        print("現在の投票状況：")
+        print(self.vote_result)
+
     @staticmethod
-    async def status_changer(message_id: int, member: discord.member, emoji_type: str, status: str):
+    async def status_changer_wrapper(status: str, message_id: int, member: discord.member = None, emoji_type: str = None):
         """
         ステータスを変更するための関数
         Parameters
@@ -135,27 +167,8 @@ class MessageManager:
             Reactionがadd,rem,clrのいずれかが格納される
 
         """
-
-        instance = MessageManager.MESSAGE_INSTANCES[message_id]
-
-        if status == "add":
-            member_id = member.id
-            # つけられた絵文字のほうじゃない絵文字が格納される
-            complement_emoji = "AC" if emoji_type == "WA" else "WA"
-            if member_id in instance.vote_result[complement_emoji]:
-                await instance.polling_station_message.remove_reaction(MessageManager.EMOJI_DICT[complement_emoji], member)
-            instance.vote_result[emoji_type].add(member_id)
-
-        if status == "rem":
-            member_id = member.id
-            instance.vote_result[emoji_type].remove(member_id)
-
-        if status == "clr":
-            await MessageManager.VOTE_CH.send("クリアすんなカス！！！！㊙すぞ！！！")
-            instance.vote_result = {"AC": set(), "WA": set()}
-
-        print("現在の投票状況：")
-        print(instance.vote_result)
+        instance_obj = MessageManager.MESSAGE_INSTANCES[message_id]
+        await instance_obj.status_changer(member, emoji_type, status)
 
     @staticmethod
     def static_init(twitter_vote_ch_obj: discord.TextChannel, citizen_list, emoji_dict: dict):
