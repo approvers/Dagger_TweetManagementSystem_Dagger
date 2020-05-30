@@ -166,7 +166,11 @@ class MessageManager:
         await o.status_changer(member, emoji_type, status)
 
     @staticmethod
-    def static_init(twitter_vote_ch_obj: discord.TextChannel, citizen_list, emoji_dict: dict):
+    def static_init(
+            twitter_vote_ch_obj: discord.TextChannel, 
+            citizen_list: list[discord.Member], 
+            emoji_dict: dict[str:discord.Emoji]
+    ):
         """
         s   t   a   t   i   c   オ   ヂ   サ   ン
         Parameters
