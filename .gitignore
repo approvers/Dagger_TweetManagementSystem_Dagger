@@ -130,3 +130,9 @@ dmypy.json
 
 # JetBrains project folder
 .idea/
+
+# Credentials
+secrets/
+
+# Documents
+documents/
