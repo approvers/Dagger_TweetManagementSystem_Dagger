@@ -29,7 +29,7 @@ ORIGINAL_EMOJI_REGEX = re.compile(r'<.*:\d*>')
 
 
 class MessageManager:
-    def __init__(self, vote_starter_message: discord.message, tweet_body_message: discord.message = None):
+    def __init__(self, vote_starter_message: discord.Message, tweet_body_message: discord.Message = None):
         """
         投票の開始が必要なメッセージを検知した時につくられるインスタンス
         Parameters
